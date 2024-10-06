@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Weather Forecast</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            text-align: center;
+            color: #333;
+           background-image: url("cloud.jpg");
+            transition: background 0.5s ease;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: auto;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0px 15px 40px rgba(0, 0, 0, 0.2);
+            background-color: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(15px);
+            position: relative;
+            z-index: 1;
+        }
+
+        h1 {
+            font-size: 2.8em;
+            margin-bottom: 20px;
+            color: #00695c;
+        }
+
+        .weather-card {
+            cursor: pointer;
+            transition: transform 0.3s, box-shadow 0.3s;
+            border-radius: 15px;
+            background-color: #ffffff;
+            padding: 20px;
+            margin: 10px 0;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .weather-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .modal-content {
+            text-align: left;
+        }
+
+        .theme-toggle, .unit-toggle {
+            margin-bottom: 20px;
+        }
+
+        #map {
+            height: 300px;
+            margin-top: 20px;
+            border-radius: 10px;
+        }
+
+        .loading {
+            font-size: 1.5em;
+            color: #007bff;
+        }
+
+        .seasonal-forecast ul {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        .seasonal-forecast li {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 5px;
+            transition: background-color 0.3s;
+        }
+
+        .seasonal-forecast li:hover {
+            background-color: #f8f9fa;
+        }
+
+        @media (max-width: 576px) {
+            h1 {
+                font-size: 2em;
+            }
+        }
+        .container{
+            box-shadow: 2px 2px 10px 15px rgba(0, 0, 0, 0.5);
+            
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Weather Forecast</h1>
+        <div class="theme-toggle mb-3">
+            <button class="btn btn-light" onclick="toggleTheme()">Toggle Dark Mode</button>
+        </div>
+        <div class="unit-toggle mb-3">
+            <button class="btn btn-primary" onclick="setUnit('metric')">°C</button>
+            <button class="btn btn-primary" onclick="setUnit('imperial')">°F</button>
+        </div>
+        <div id="search" class="mb-3">
+            <input type="text" id="cityInput" class="form-control" placeholder="Enter city name">
+            <div class="mt-2">
+                <button class="btn btn-success" onclick="getWeather()">Search</button>
+                <button class="btn btn-danger" onclick="clearInput()">Clear</button>
+                <button class="btn btn-info" onclick="getLocation()">Use Current Location</button>
+            </div>
+        </div>
+        <div id="loading" class="loading" style="display: none;">Loading...</div>
+        <div id="weatherInfo" class="mb-4"></div>
+        <div id="forecastInfo" class="mb-4"></div>
+        <div id="hourlyForecastInfo" class="mb-4"></div>
+        <div id="weatherAlerts" class="mb-4"></div>
+        <div id="seasonalForecastInfo" class="seasonal-forecast mb-4"></div>
+        <div id="map"></div>
+
+        <div class="modal fade" id="weatherDetailsModal" tabindex="-1" aria-labelledby="weatherDetailsLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="weatherDetailsLabel">Weather Details</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body" id="weatherDetailsContent"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="saved-locations">
+            <h3>Saved Locations</h3>
+            <div id="savedCities"></div>
+        </div>
+    </div>
+
+    <script>
+        const apiKey = '4ddb295e4cdbfc8af192e395644537ce'; // Replace with your OpenWeatherMap API key
+        const weatherInfoDiv = document.getElementById('weatherInfo');
+        const forecastInfoDiv = document.getElementById('forecastInfo');
+        const hourlyForecastInfoDiv = document.getElementById('hourlyForecastInfo');
+        const weatherAlertsDiv = document.getElementById('weatherAlerts');
+        const seasonalForecastInfoDiv = document.getElementById('seasonalForecastInfo');
+        const loadingDiv = document.getElementById('loading');
+        const savedCitiesDiv = document.getElementById('savedCities');
+        let unit = 'metric'; // Default unit
+        let savedCities = JSON.parse(localStorage.getItem('savedCities')) || [];
+        let searchHistory = JSON.parse(localStorage.getItem('searchHistory')) || [];
+
+        function setUnit(selectedUnit) {
+            unit = selectedUnit;
+            localStorage.setItem('unit', unit);
+            getWeather(); // Fetch weather again with the new unit
+        }
+
+        function toggleTheme() {
+            const isDarkTheme = document.body.classList.toggle('dark-theme');
+            localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
+            document.body.style.backgroundColor = isDarkTheme ? '#333' : '#fff';
+            document.body.style.color = isDarkTheme ? '#fff' : '#333';
+        }
+
+        function clearInput() {
+            document.getElementById('cityInput').value = '';
+            weatherInfoDiv.innerHTML = '';
+            forecastInfoDiv.innerHTML = '';
+            hourlyForecastInfoDiv.innerHTML = '';
+            weatherAlertsDiv.innerHTML = '';
+            seasonalForecastInfoDiv.innerHTML = '';
+        }
+
+        function saveCity(city) {
+            if (!savedCities.includes(city)) {
+                savedCities.push(city);
+                localStorage.setItem('savedCities', JSON.stringify(savedCities));
+                displaySavedCities();
+            }
+        }
+
+        function displaySavedCities() {
+            savedCitiesDiv.innerHTML = '';
+            savedCities.forEach(city => {
+                const button = document.createElement('button');
+                button.className = 'btn btn-outline-secondary m-1';
+                button.textContent = city;
+                button.onclick = () => fetchWeatherByCity(city);
+                savedCitiesDiv.appendChild(button);
+            });
+        }
+
+        function fetchWeatherByCity(city) {
+            document.getElementById('cityInput').value = city;
+            getWeather();
+        }
+
+        function getWeather() {
+            const city = document.getElementById('cityInput').value;
+            if (!city) return;
+
+            loadingDiv.style.display = 'block';
+            weatherInfoDiv.innerHTML = '';
+            forecastInfoDiv.innerHTML = '';
+            hourlyForecastInfoDiv.innerHTML = '';
+            weatherAlertsDiv.innerHTML = '';
+            seasonalForecastInfoDiv.innerHTML = '';
+
+            const apiUrl = `https://api.openweathermap.org/data/2.5/weather?q=${city}&units=${unit}&appid=${apiKey}`;
+            fetch(apiUrl)
+                .then(response => response.json())
+                .then(data => {
+                    loadingDiv.style.display = 'none';
+                    displayWeather(data);
+                    saveCity(city);
+                    getForecast(city); // Fetch forecast for the city
+                    getHourlyForecast(city); // Fetch hourly forecast
+                    getSeasonalForecast(city); // Fetch seasonal forecast
+                    displayMap(data.coord.lat, data.coord.lon); // Display weather map
+                })
+                .catch(error => {
+                    loadingDiv.style.display = 'none';
+                    alert('Error fetching weather data.');
+                });
+        }
+
+        function getForecast(city) {
+            const apiUrl = `https://api.openweathermap.org/data/2.5/forecast?q=${city}&units=${unit}&appid=${apiKey}`;
+            fetch(apiUrl)
+                .then(response => response.json())
+                .then(data => {
+                    displayForecast(data);
+                    displayWeatherAlerts(data);
+                })
+                .catch(error => {
+                    alert('Error fetching forecast data.');
+                });
+        }
+
+        function getHourlyForecast(city) {
+            const apiUrl = `https://api.openweathermap.org/data/2.5/forecast/hourly?q=${city}&units=${unit}&appid=${apiKey}`;
+            fetch(apiUrl)
+                .then(response => response.json())
+                .then(data => {
+                    displayHourlyForecast(data);
+                })
+                .catch(error => {
+                    alert('Error fetching hourly forecast data.');
+                });
+        }
+
+        function getSeasonalForecast(city) {
+            const apiUrl = `https://api.openweathermap.org/data/2.5/forecast?q=${city}&units=${unit}&appid=${apiKey}`;
+            fetch(apiUrl)
+                .then(response => response.json())
+                .then(data => {
+                    displaySeasonalForecast(data);
+                })
+                .catch(error => {
+                    alert('Error fetching seasonal forecast data.');
+                });
+        }
+
+        function displayWeather(data) {
+            const { name, weather, main, wind } = data;
+            const iconUrl = `https://openweathermap.org/img/wn/${weather[0].icon}.png`;
+            const condition = weather[0].description;
+
+            const weatherHTML = `
+                <div class="weather-card" onclick="showWeatherDetails('${name}', '${iconUrl}', '${condition}', ${main.temp}, ${main.humidity}, ${wind.speed})">
+                    <h3>${name}</h3>
+                    <img src="${iconUrl}" alt="${condition}">
+                    <p>${condition}</p>
+                    <p><strong>Temperature:</strong> ${main.temp}°</p>
+                </div>
+            `;
+            weatherInfoDiv.innerHTML = weatherHTML;
+        }
+
+        function showWeatherDetails(name, iconUrl, condition, temp, humidity, windSpeed) {
+            const weatherDetailsContent = `
+                <h2>${name}</h2>
+                <h4><img src="${iconUrl}" alt="${condition}"> ${condition}</h4>
+                <p><strong>Temperature:</strong> ${temp}°</p>
+                <p><strong>Humidity:</strong> ${humidity}%</p>
+                <p><strong>Wind Speed:</strong> ${windSpeed} m/s</p>
+            `;
+            document.getElementById('weatherDetailsContent').innerHTML = weatherDetailsContent;
+            const modal = new bootstrap.Modal(document.getElementById('weatherDetailsModal'));
+            modal.show();
+        }
+
+        function displayForecast(data) {
+            const forecastHTML = data.list.map(item => {
+                const date = new Date(item.dt * 1000);
+                return `
+                    <div class="card mb-2">
+                        <p>${date.toLocaleDateString()} ${date.toLocaleTimeString()}</p>
+                        <p>${item.weather[0].main} <img src="https://openweathermap.org/img/wn/${item.weather[0].icon}.png" alt="${item.weather[0].description}"></p>
+                        <p>Temp: ${item.main.temp}°</p>
+                        <p>Humidity: ${item.main.humidity}%</p>
+                    </div>
+                `;
+            }).join('');
+            forecastInfoDiv.innerHTML = `<h3>5-Day Forecast</h3>${forecastHTML}`;
+        }
+
+        function displayHourlyForecast(data) {
+            const hourlyHTML = data.list.map(item => {
+                const date = new Date(item.dt * 1000);
+                return `
+                    <div class="card mb-2">
+                        <p>${date.toLocaleDateString()} ${date.toLocaleTimeString()}</p>
+                        <p>${item.weather[0].main} <img src="https://openweathermap.org/img/wn/${item.weather[0].icon}.png" alt="${item.weather[0].description}"></p>
+                        <p>Temp: ${item.main.temp}°</p>
+                        <p>Humidity: ${item.main.humidity}%</p>
+                    </div>
+                `;
+            }).join('');
+            hourlyForecastInfoDiv.innerHTML = `<h3>Hourly Forecast (Next 24 Hours)</h3>${hourlyHTML}`;
+        }
+
+        function displaySeasonalForecast(data) {
+            const seasonalHTML = `
+                <h3>Seasonal Forecast</h3>
+                <p>Next few days:</p>
+                <ul>
+                    ${data.list.slice(0, 5).map(item => {
+                        const date = new Date(item.dt * 1000);
+                        return `<li>${date.toLocaleDateString()}: ${item.weather[0].description}, Temp: ${item.main.temp}°</li>`;
+                    }).join('')}
+                </ul>
+            `;
+            seasonalForecastInfoDiv.innerHTML = seasonalHTML;
+        }
+
+        function displayWeatherAlerts(data) {
+            if (data.cnt && data.list) {
+                const alerts = data.list.filter(item => item.weather[0].main.includes('Alert')); // Example filter
+                if (alerts.length > 0) {
+                    const alertsHTML = alerts.map(alert => `<p>${alert.weather[0].description}</p>`).join('');
+                    weatherAlertsDiv.innerHTML = `<h3>Weather Alerts</h3>${alertsHTML}`;
+                }
+            }
+        }
+
+        function displayMap(lat, lon) {
+            const mapContainer = document.getElementById('map');
+            const map = new google.maps.Map(mapContainer, {
+                center: { lat: lat, lng: lon },
+                zoom: 8
+            });
+
+            new google.maps.Marker({
+                position: { lat: lat, lng: lon },
+                map: map,
+                title: 'Your Location'
+            });
+        }
+
+        function getLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(position => {
+                    const { latitude, longitude } = position.coords;
+                    const apiUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${latitude}&lon=${longitude}&units=${unit}&appid=${apiKey}`;
+                    fetch(apiUrl)
+                        .then(response => response.json())
+                        .then(data => {
+                            displayWeather(data);
+                            saveCity(data.name);
+                            getForecast(data.name);
+                            getHourlyForecast(data.name);
+                            getSeasonalForecast(data.name);
+                            displayMap(latitude, longitude); // Display weather map
+                        })
+                        .catch(error => {
+                            alert('Error fetching location weather.');
+                        });
+                });
+            } else {
+                alert('Geolocation is not supported by this browser.');
+            }
+        }
+
+        // Load saved cities and set unit/theme on page load
+        displaySavedCities();
+        unit = localStorage.getItem('unit') || 'metric';
+        const currentTheme = localStorage.getItem('theme') || 'light';
+        if (currentTheme === 'dark') toggleTheme(); // Set initial theme
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script async defer src="https://maps.googleapis.com/maps/api/js?key=YOUR_MAPS_API_KEY"></script> <!-- Replace with your Google Maps API key -->
+</body>
+
+</html>
